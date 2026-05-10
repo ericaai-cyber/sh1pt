@@ -53,6 +53,30 @@ importers:
         specifier: workspace:*
         version: link:../../core
 
+  packages/ai/claude:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/ai/gemini:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/ai/openai:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/ai/qwen:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
   packages/api:
     dependencies:
       '@hono/node-server':
@@ -746,6 +770,12 @@ importers:
         specifier: workspace:*
         version: link:../../core
 
+  packages/social/discord:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
   packages/social/facebook:
     dependencies:
       '@profullstack/sh1pt-core':
@@ -836,7 +866,19 @@ importers:
         specifier: workspace:*
         version: link:../../core
 
+  packages/social/nostr:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
   packages/social/openwork:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/social/pinterest:
     dependencies:
       '@profullstack/sh1pt-core':
         specifier: workspace:*
@@ -866,7 +908,25 @@ importers:
         specifier: workspace:*
         version: link:../../core
 
+  packages/social/snapchat:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/social/spotify:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
   packages/social/stackernews:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/social/telegram:
     dependencies:
       '@profullstack/sh1pt-core':
         specifier: workspace:*
@@ -902,7 +962,25 @@ importers:
         specifier: workspace:*
         version: link:../../core
 
+  packages/social/tumblr:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/social/twitch:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
   packages/social/ugig:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:*
+        version: link:../../core
+
+  packages/social/vimeo:
     dependencies:
       '@profullstack/sh1pt-core':
         specifier: workspace:*

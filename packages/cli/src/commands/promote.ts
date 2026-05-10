@@ -197,18 +197,20 @@ crowdfundCmd
 // adaptation (truncation, hashtag placement, media requirements).
 const socialCmd = promoteCmd
   .command('social')
-  .description('Post organically to X, LinkedIn, Instagram, Threads, TikTok, YouTube, Reddit, Mastodon, Bluesky');
+  .description('Post organically to X, LinkedIn, Instagram, Facebook, Threads, TikTok, YouTube, Pinterest, Reddit, Snapchat, Discord, Telegram, Twitch, Tumblr, Vimeo, Spotify, Mastodon, Bluesky, Nostr, and more');
 
-// All 34 social adapters declare a real setup() (cookieSetup / oauthSetup /
-// tokenSetup / manualSetup). This action fans them out: --platform picks
+// All 43 social adapters declare a real setup() (cookieSetup / oauthSetup /
+// tokenSetup / webhookUrlSetup / manualSetup). This action fans them out: --platform picks
 // a subset, otherwise we prompt. Each adapter is lazy-imported so missing
 // packages print an install hint instead of crashing.
 const SOCIAL_PLATFORMS = [
-  '4claw', 'blossom', 'bluesky', 'codenewbie', 'devto', 'facebook', 'forem',
-  'hackernews', 'hackernoon', 'hashnode', 'indiehackers', 'instagram', 'klawdin',
-  'linkedin', 'mastodon', 'medium', 'moltbook', 'moltexchange', 'moltfounders',
-  'moltywork', 'openwork', 'primal', 'quora', 'reddit', 'secureclaw', 'stackernews',
-  'the-colony', 'threads', 'tikclawk', 'tiktok', 'toku-agency', 'ugig', 'x', 'youtube',
+  '4claw', 'blossom', 'bluesky', 'codenewbie', 'devto', 'discord', 'facebook',
+  'forem', 'hackernews', 'hackernoon', 'hashnode', 'indiehackers', 'instagram',
+  'klawdin', 'linkedin', 'mastodon', 'medium', 'moltbook', 'moltexchange',
+  'moltfounders', 'moltywork', 'nostr', 'openwork', 'pinterest', 'primal',
+  'quora', 'reddit', 'secureclaw', 'snapchat', 'spotify', 'stackernews',
+  'telegram', 'the-colony', 'threads', 'tikclawk', 'tiktok', 'toku-agency',
+  'tumblr', 'twitch', 'ugig', 'vimeo', 'x', 'youtube',
 ];
 
 socialCmd
@@ -288,6 +290,76 @@ socialCmd
   .action((opts: { platform?: string; json?: boolean }) => {
     if (opts.json) { console.log(JSON.stringify({ posts: [], totals: {} }, null, 2)); return; }
     console.log(kleur.dim('[stub] social metrics'));
+  });
+
+// AI providers — generate ad copy / social bodies / taglines from a
+// prompt. Distinct from `agents/` (which wraps installed CLI binaries
+// like `claude` / `codex`); this is HTTP-API-based content generation
+// keyed off provider API keys held in the vault.
+const AI_PLATFORMS = ['claude', 'openai', 'qwen', 'gemini'];
+
+const aiCmd = promoteCmd
+  .command('ai')
+  .description('Configure AI providers (Claude, OpenAI, Qwen, Gemini) used to draft ad copy and post bodies');
+
+aiCmd
+  .command('setup')
+  .description("Connect AI providers — runs each provider adapter's setup (API key paste)")
+  .option('--platform <id...>', 'e.g. claude openai (or ai-claude, ai-openai)')
+  .action(async (opts: { platform?: string[] }, cmd: Command) => {
+    const merged = cmd.optsWithGlobals() as { platform?: string[] };
+    const requested = merged.platform ?? opts.platform;
+    let names = (requested ?? []).map(stripAiPrefix).filter(Boolean);
+
+    if (names.length === 0) {
+      const res = await prompts({
+        type: 'multiselect',
+        name: 'picks',
+        message: 'Which AI providers to set up?',
+        choices: AI_PLATFORMS.map((p) => ({ title: p, value: p })),
+        instructions: false,
+        hint: 'space to select, return to confirm',
+      });
+      names = (res.picks as string[] | undefined) ?? [];
+      if (names.length === 0) {
+        console.log(kleur.dim('nothing selected — aborting.'));
+        return;
+      }
+    }
+
+    const wanted = names.map((n) => `@profullstack/sh1pt-ai-${n}`);
+    try {
+      await ensureInstalled(wanted);
+    } catch (err) {
+      console.error(kleur.red(err instanceof Error ? err.message : String(err)));
+      process.exit(1);
+    }
+
+    const ctx = makeCliSetupContext();
+    for (const name of names) {
+      console.log();
+      console.log(kleur.bold().underline(`ai: ${name}`));
+      const pkg = `@profullstack/sh1pt-ai-${name}`;
+      const adapter = await loadInstalledPackage<AdapterWithSetup>(pkg);
+      if (!adapter || typeof adapter !== 'object' || !('id' in adapter)) {
+        console.log(kleur.yellow(`  failed to load ${pkg} after install — file an issue.`));
+        continue;
+      }
+      await runSetup(adapter, ctx);
+    }
+  });
+
+function stripAiPrefix(p: string): string {
+  return p.replace(/^ai-/, '').toLowerCase();
+}
+
+aiCmd
+  .command('list')
+  .description('List configured AI providers')
+  .option('--json')
+  .action((opts: { json?: boolean }) => {
+    if (opts.json) { console.log(JSON.stringify({ providers: AI_PLATFORMS }, null, 2)); return; }
+    console.log(kleur.dim(`available: ${AI_PLATFORMS.join(', ')}`));
   });
 
 // Outreach umbrella — podcast booking, cold email, launch sites.
