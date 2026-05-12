@@ -14,7 +14,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile=false
+RUN pnpm install --frozen-lockfile=false --filter "sh1pt-dot-com..."
 RUN pnpm --filter sh1pt-dot-com build
 
 FROM node:20-bookworm-slim AS runner
