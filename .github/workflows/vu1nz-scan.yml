@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install vu1nz
-        run: pip install --quiet git+https://github.com/profullstack/vu1nz.com.git
+        run: pip install --quiet git+https://github.com/profullstack/vu1nz-gh-actions.git
 
       - name: Scan workflows
         id: scan
