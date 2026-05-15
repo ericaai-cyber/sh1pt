@@ -29,16 +29,25 @@ jobs:
         id: scan
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NO_COLOR: "1"
+          TERM: dumb
         run: |
           vu1nz actions scan ${{ github.repository }} \
             --token "$GITHUB_TOKEN" \
             --json \
             --output "$RUNNER_TEMP/vu1nz-report" \
             | tee "$RUNNER_TEMP/vu1nz-scan-raw.txt" || true
-          # vu1nz prints progress lines before the JSON and may include ANSI codes
-          # Strip ANSI escape sequences, then extract the JSON object
-          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/vu1nz-scan-raw.txt" \
-            | sed -n '/^{/,/^}/p' > "$RUNNER_TEMP/vu1nz-scan.json"
+          # vu1nz prints progress lines before the JSON — extract just the JSON object
+          python3 -c "
+          import re, sys
+          raw = open('$RUNNER_TEMP/vu1nz-scan-raw.txt').read()
+          # strip any remaining ANSI escape sequences
+          raw = re.sub(r'\x1b\[[0-9;]*m', '', raw)
+          # find the JSON object
+          start = raw.find('{')
+          if start >= 0:
+              sys.stdout.write(raw[start:])
+          " > "$RUNNER_TEMP/vu1nz-scan.json"
 
       - name: Claude AI review
         if: env.HAS_CLAUDE_KEY == 'true'
