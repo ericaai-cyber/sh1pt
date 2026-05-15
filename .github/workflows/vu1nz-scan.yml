@@ -35,8 +35,10 @@ jobs:
             --json \
             --output "$RUNNER_TEMP/vu1nz-report" \
             | tee "$RUNNER_TEMP/vu1nz-scan-raw.txt" || true
-          # vu1nz prints progress lines before the JSON — extract just the JSON object
-          sed -n '/^{/,/^}/p' "$RUNNER_TEMP/vu1nz-scan-raw.txt" > "$RUNNER_TEMP/vu1nz-scan.json"
+          # vu1nz prints progress lines before the JSON and may include ANSI codes
+          # Strip ANSI escape sequences, then extract the JSON object
+          sed 's/\x1b\[[0-9;]*m//g' "$RUNNER_TEMP/vu1nz-scan-raw.txt" \
+            | sed -n '/^{/,/^}/p' > "$RUNNER_TEMP/vu1nz-scan.json"
 
       - name: Claude AI review
         if: env.HAS_CLAUDE_KEY == 'true'
