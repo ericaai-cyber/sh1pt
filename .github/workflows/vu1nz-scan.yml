@@ -22,11 +22,20 @@ jobs:
       - name: Install vu1nz
         run: pip install --quiet git+https://github.com/profullstack/vu1nz-gh-actions.git
 
+      - name: Load env file
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          echo "$ENV_FILE" > "$RUNNER_TEMP/.env"
+          # Export ANTHROPIC_API_KEY from the env file
+          ANTHROPIC_API_KEY=$(grep '^ANTHROPIC_API_KEY=' "$RUNNER_TEMP/.env" | cut -d'=' -f2-)
+          echo "::add-mask::$ANTHROPIC_API_KEY"
+          echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> "$GITHUB_ENV"
+
       - name: Review PR
         id: review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           NO_COLOR: "1"
           TERM: dumb
         run: |
