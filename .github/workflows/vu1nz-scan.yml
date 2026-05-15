@@ -33,9 +33,22 @@ jobs:
           vu1nz actions scan ${{ github.repository }} \
             --token "$GITHUB_TOKEN" \
             --json \
+            --output "$RUNNER_TEMP/vu1nz-report" \
             2>&1 | tee "$RUNNER_TEMP/vu1nz-scan.json"
 
-      - name: Evaluate findings
+      - name: Claude AI review
+        if: env.HAS_CLAUDE_KEY == 'true'
+        env:
+          HAS_CLAUDE_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          vu1nz actions scan ${{ github.repository }} \
+            --token "$GITHUB_TOKEN" \
+            --claude \
+            --output "$RUNNER_TEMP/vu1nz-report"
+
+      - name: Evaluate findings and build comment
         id: eval
         run: |
           python3 << 'PYEOF'
@@ -47,34 +60,84 @@ jobs:
                   data = json.load(f)
           except Exception as e:
               print(f"::warning::Could not parse scan results: {e}")
+              # Write fallback so the comment step still works
+              with open(os.environ.get("GITHUB_OUTPUT", ""), "a") as out:
+                  out.write("total=0\n")
+                  out.write("has_high_critical=false\n")
+              comment_file = os.environ.get("RUNNER_TEMP", "") + "/vu1nz-comment.md"
+              with open(comment_file, "w") as f:
+                  f.write("## vu1nz CI/CD Security Scan\n\nCould not parse scan results.\n")
               sys.exit(0)
 
           findings = data.get("findings", [])
           counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
-          for f in findings:
-              sev = f.get("severity", "").lower()
+          for finding in findings:
+              sev = finding.get("severity", "").lower()
               if sev in counts:
                   counts[sev] += 1
 
           total = len(findings)
           has_hc = counts["critical"] > 0 or counts["high"] > 0
 
-          parts = [f"**{total} findings**"]
+          # Build markdown comment body
+          lines = ["## vu1nz CI/CD Security Scan", ""]
+          lines.append(f"Scanned **{data.get('workflow_count', '?')}** workflows — **{total}** finding(s)")
+          lines.append("")
+
+          # Severity badges
+          badge_parts = []
           for sev in ("critical", "high", "medium", "low"):
               if counts[sev] > 0:
-                  parts.append(f"{sev}: {counts[sev]}")
-          summary = " | ".join(parts)
+                  badge_parts.append(f"**{sev.upper()}**: {counts[sev]}")
+          if badge_parts:
+              lines.append(" | ".join(badge_parts))
+              lines.append("")
 
+          if has_hc:
+              lines.append("> **High or critical findings detected — review before merging.**")
+              lines.append("")
+
+          # Findings table
+          if findings:
+              lines.append("### Findings")
+              lines.append("")
+              lines.append("| Severity | File | Finding | Recommendation |")
+              lines.append("|----------|------|---------|----------------|")
+              for finding in findings:
+                  sev = finding.get("severity", "?").upper()
+                  title = finding.get("title", "")
+                  desc = finding.get("description", "").replace("\n", " ")[:120]
+                  file = finding.get("file", "")
+                  line_num = finding.get("line", "")
+                  loc = f"`{file}:{line_num}`" if line_num else f"`{file}`"
+                  rec = finding.get("recommendation", "").replace("\n", " ")[:120]
+                  cwe = finding.get("cwe", "")
+                  sev_label = sev
+                  if cwe:
+                      sev_label = f"{sev} ({cwe})"
+                  lines.append(f"| {sev_label} | {loc} | **{title}** — {desc} | {rec} |")
+              lines.append("")
+          else:
+              lines.append("No findings. All clear.")
+              lines.append("")
+
+          comment_body = "\n".join(lines)
+
+          # Write comment to a file (avoids output escaping issues)
+          comment_file = os.environ.get("RUNNER_TEMP", "") + "/vu1nz-comment.md"
+          with open(comment_file, "w") as f:
+              f.write(comment_body)
+
+          # Write simple outputs
           with open(os.environ.get("GITHUB_OUTPUT", ""), "a") as out:
               out.write(f"total={total}\n")
               out.write(f"has_high_critical={'true' if has_hc else 'false'}\n")
-              out.write(f"summary={summary}\n")
 
           if has_hc:
               print(f"::error::vu1nz found high/critical CI/CD vulnerabilities")
               sys.exit(1)
 
-          print(f"::notice::{summary}")
+          print(f"::notice::vu1nz scan: {total} finding(s), no high/critical issues")
           PYEOF
 
       - name: Comment on PR
@@ -82,12 +145,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const summary = `${{ steps.eval.outputs.summary || 'Scan completed.' }}`;
-            const hasHC = '${{ steps.eval.outputs.has_high_critical }}' === 'true';
-
-            let body = `## vu1nz CI/CD Security Scan\n\n${summary}\n\n`;
-            if (hasHC) {
-              body += '**High or critical findings detected — review before merging.**\n\n';
+            const fs = require('fs');
+            const commentFile = `${process.env.RUNNER_TEMP}/vu1nz-comment.md`;
+            let body;
+            try {
+              body = fs.readFileSync(commentFile, 'utf8');
+            } catch {
+              body = '## vu1nz CI/CD Security Scan\n\nScan completed but could not read results.';
             }
 
             const { data: comments } = await github.rest.issues.listComments({
