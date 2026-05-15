@@ -70,7 +70,7 @@ jobs:
           scan_file = os.environ.get("RUNNER_TEMP", "") + "/vu1nz-scan.json"
           try:
               with open(scan_file) as f:
-                  data = json.load(f)
+                  data = json.loads(f.read(), strict=False)
           except Exception as e:
               print(f"::warning::Could not parse scan results: {e}")
               # Write fallback so the comment step still works
