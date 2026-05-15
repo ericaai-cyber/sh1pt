@@ -37,16 +37,16 @@ jobs:
             --json \
             --output "$RUNNER_TEMP/vu1nz-report" \
             | tee "$RUNNER_TEMP/vu1nz-scan-raw.txt" || true
-          # vu1nz prints progress lines before the JSON — extract just the JSON object
+          # vu1nz prints progress lines before JSON and a report line after —
+          # use raw_decode to extract exactly the JSON object
           python3 -c "
-          import re, sys
+          import json, re, sys
           raw = open('$RUNNER_TEMP/vu1nz-scan-raw.txt').read()
-          # strip any remaining ANSI escape sequences
           raw = re.sub(r'\x1b\[[0-9;]*m', '', raw)
-          # find the JSON object
           start = raw.find('{')
           if start >= 0:
-              sys.stdout.write(raw[start:])
+              obj, _ = json.JSONDecoder(strict=False).raw_decode(raw, start)
+              json.dump(obj, sys.stdout)
           " > "$RUNNER_TEMP/vu1nz-scan.json"
 
       - name: Claude AI review
