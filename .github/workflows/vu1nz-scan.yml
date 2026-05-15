@@ -34,7 +34,9 @@ jobs:
             --token "$GITHUB_TOKEN" \
             --json \
             --output "$RUNNER_TEMP/vu1nz-report" \
-            | tee "$RUNNER_TEMP/vu1nz-scan.json" || true
+            | tee "$RUNNER_TEMP/vu1nz-scan-raw.txt" || true
+          # vu1nz prints progress lines before the JSON — extract just the JSON object
+          sed -n '/^{/,/^}/p' "$RUNNER_TEMP/vu1nz-scan-raw.txt" > "$RUNNER_TEMP/vu1nz-scan.json"
 
       - name: Claude AI review
         if: env.HAS_CLAUDE_KEY == 'true'
