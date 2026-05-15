@@ -13,6 +13,7 @@ packages:
   - "packages/payments/*"
   - "packages/vcs/*"
   - "packages/webhooks/*"
+  - "packages/bot/*"
   - "packages/bridges/*"
   - "packages/docs/*"
   - "packages/entity/*"
