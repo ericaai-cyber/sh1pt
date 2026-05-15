@@ -879,8 +879,6 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
-  packages/crawlproof-social: {}
-
   packages/dns/azure:
     dependencies:
       '@profullstack/sh1pt-core':
@@ -1305,15 +1303,6 @@ importers:
 
   packages/social/codenewbie:
     dependencies:
-      '@profullstack/sh1pt-core':
-        specifier: workspace:*
-        version: link:../../core
-
-  packages/social/crawlproof:
-    dependencies:
-      '@profullstack/crawlproof-social':
-        specifier: workspace:*
-        version: link:../../crawlproof-social
       '@profullstack/sh1pt-core':
         specifier: workspace:*
         version: link:../../core
