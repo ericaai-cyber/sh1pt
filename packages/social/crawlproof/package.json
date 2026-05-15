@@ -1,0 +1,27 @@
+{
+  "name": "@profullstack/sh1pt-social-crawlproof",
+  "version": "0.1.0",
+  "description": "sh1pt social adapter that posts via accounts a user has connected on crawlproof.com (instead of asking for per-platform local credentials).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@profullstack/sh1pt-core": "workspace:*",
+    "@profullstack/crawlproof-social": "workspace:*"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/sh1pt.git",
+    "directory": "packages/social/crawlproof"
+  },
+  "homepage": "https://sh1pt.com",
+  "bugs": "https://github.com/profullstack/sh1pt/issues",
+  "files": [
+    "dist"
+  ]
+}
