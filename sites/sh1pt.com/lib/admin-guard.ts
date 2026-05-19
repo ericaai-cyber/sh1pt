@@ -5,7 +5,11 @@ import { getSupabaseServerClient } from './supabase/server';
 import { getSupabaseServiceClient } from './supabase/service';
 
 export type AdminUser = {
+  /** auth.users.id — what app code thinks of as "the user id". */
   id: string;
+  /** profiles.id — the profile row's PK. Use this for FKs that
+   *  reference public.profiles(id) (e.g. blog_integrations.created_by). */
+  profileId: string;
   email: string;
   is_admin: true;
 };
@@ -23,9 +27,14 @@ export async function requireAdminPage(): Promise<AdminUser> {
   const admin = getSupabaseServiceClient();
   const { data: profile } = await admin
     .from('profiles')
-    .select('user_id, email, is_admin')
+    .select('id, user_id, email, is_admin')
     .eq('user_id', user.id)
-    .maybeSingle<{ user_id: string; email: string | null; is_admin: boolean }>();
+    .maybeSingle<{
+      id: string;
+      user_id: string;
+      email: string | null;
+      is_admin: boolean;
+    }>();
 
   if (!profile?.is_admin) {
     // 404 (not redirect, not throw) so a non-admin can't fingerprint
@@ -35,7 +44,12 @@ export async function requireAdminPage(): Promise<AdminUser> {
     notFound();
   }
 
-  return { id: profile.user_id, email: profile.email ?? user.email ?? '', is_admin: true };
+  return {
+    id: profile.user_id,
+    profileId: profile.id,
+    email: profile.email ?? user.email ?? '',
+    is_admin: true,
+  };
 }
 
 // Route-handler gate. Same checks, but returns a JSON NextResponse on
@@ -52,9 +66,14 @@ export async function requireAdminApi(): Promise<AdminUser | NextResponse> {
   const admin = getSupabaseServiceClient();
   const { data: profile } = await admin
     .from('profiles')
-    .select('user_id, email, is_admin')
+    .select('id, user_id, email, is_admin')
     .eq('user_id', user.id)
-    .maybeSingle<{ user_id: string; email: string | null; is_admin: boolean }>();
+    .maybeSingle<{
+      id: string;
+      user_id: string;
+      email: string | null;
+      is_admin: boolean;
+    }>();
 
   if (!profile) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
@@ -63,5 +82,10 @@ export async function requireAdminApi(): Promise<AdminUser | NextResponse> {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  return { id: profile.user_id, email: profile.email ?? user.email ?? '', is_admin: true };
+  return {
+    id: profile.user_id,
+    profileId: profile.id,
+    email: profile.email ?? user.email ?? '',
+    is_admin: true,
+  };
 }

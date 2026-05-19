@@ -35,12 +35,23 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
     .from('blog_integrations')
-    .insert({ name, kind: 'crawlproof', access_token: accessToken, created_by: guard.id })
+    .insert({
+      name,
+      kind: 'crawlproof',
+      access_token: accessToken,
+      // FK references profiles(id) — that's the profile row's PK, NOT
+      // the auth user id. Pass profileId, not guard.id.
+      created_by: guard.profileId,
+    })
     .select('id, name, kind, access_token, created_at, last_used_at, request_count')
     .single();
 
   if (error || !data) {
-    return NextResponse.json({ error: 'Failed to create integration' }, { status: 500 });
+    console.error('[admin] blog_integrations insert failed:', error);
+    return NextResponse.json(
+      { error: error?.message ?? 'Failed to create integration' },
+      { status: 500 },
+    );
   }
   return NextResponse.json({ integration: data });
 }
