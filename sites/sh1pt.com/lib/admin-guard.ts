@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getSupabaseServerClient } from './supabase/server';
 import { getSupabaseServiceClient } from './supabase/service';
 
@@ -28,9 +28,11 @@ export async function requireAdminPage(): Promise<AdminUser> {
     .maybeSingle<{ user_id: string; email: string | null; is_admin: boolean }>();
 
   if (!profile?.is_admin) {
-    // Render the 403 inline rather than redirecting — gives the user a
-    // chance to log in as a different account without a redirect loop.
-    throw new Response('Forbidden', { status: 403 });
+    // 404 (not redirect, not throw) so a non-admin can't fingerprint
+    // the route's existence. Throwing a Response here crashes
+    // client-side in React 19 — it isn't a recognized control-flow
+    // signal in server components.
+    notFound();
   }
 
   return { id: profile.user_id, email: profile.email ?? user.email ?? '', is_admin: true };

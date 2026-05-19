@@ -22,10 +22,13 @@ export default function AdminContent() {
   const [copied, setCopied] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const webhookUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/api/webhooks/crawlproof`
-      : '/api/webhooks/crawlproof';
+  // Resolve the absolute URL after mount so the initial SSR HTML stays
+  // identical to the first client render — otherwise React 19's strict
+  // hydration check throws and the page crashes client-side.
+  const [webhookUrl, setWebhookUrl] = useState('/api/webhooks/crawlproof');
+  useEffect(() => {
+    setWebhookUrl(`${window.location.origin}/api/webhooks/crawlproof`);
+  }, []);
 
   const fetchIntegrations = useCallback(async () => {
     setLoading(true);
