@@ -45,9 +45,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
               <NavLink href="/getting-started" matchPrefix>Getting started</NavLink>
               <NavLink href="/docs" matchPrefix>Docs</NavLink>
+              <NavLink href="/blog" matchPrefix>Blog</NavLink>
               <NavLink href="/#pricing">Pricing</NavLink>
-              <NavLink href="/investors" matchPrefix>Investors</NavLink>
-              <NavLink href="/deck" matchPrefix>Deck</NavLink>
               <NavLink href="https://github.com/profullstack/sh1pt" target="_blank" rel="noreferrer">GitHub</NavLink>
               {user ? (
                 <>
@@ -81,7 +80,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <footer className="container" style={{ padding: '3rem 1.5rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
           <div>© 2026 Profullstack, Inc. — sh1pt is MIT-licensed.</div>
           <div style={{ marginTop: '0.5rem' }}>
-            <a href="/investors">Investors</a> · <a href="/waitlist">Waitlist</a> · <a href="https://github.com/profullstack/sh1pt">Source</a>
+            <a href="/blog">Blog</a> · <a href="/investors">Investors</a> · <a href="/deck">Deck</a> · <a href="/waitlist">Waitlist</a> · <a href="https://github.com/profullstack/sh1pt">Source</a>
           </div>
         </footer>
       </body>
