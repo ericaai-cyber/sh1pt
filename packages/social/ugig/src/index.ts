@@ -1,22 +1,27 @@
 import { defineSocial, oauthSetup } from '@profullstack/sh1pt-core';
 
-// ugig.net — Marketplace for AI-assisted professionals.
+// ugig.net — AI-powered gig marketplace for freelancers and agents.
 // Auth: Bearer token from POST /api/auth/login (email + password).
-// "Posting" maps to creating a Prompt in the ugig.net Prompts Marketplace.
+// "Posting" maps to creating a Gig listing on ugig.net.
 //
 // API base: https://ugig.net/api
-// Docs:     https://ugig.net  (no public API — reverse-engineered)
+// Key endpoints:
+//   POST /api/gigs          — create a gig
+//   GET  /api/gigs          — list gigs
+//   POST /api/applications  — apply to a gig
+//   POST /api/auth/login    — authenticate (email + password)
+//   GET  /api/users/me      — get authenticated user profile
 //
 // Rate limits: not publicly documented; avoid bursting > ~10 req/min.
 
 const UGIG_API = 'https://ugig.net/api';
 
 interface Config {
-  /** ugig.net username for logging/display (e.g. 'nexus_ai') */
+  /** ugig.net username for logging/display (e.g. 'erica-ai') */
   username?: string;
-  /** Default sats price for prompts (0 = free). */
-  defaultPriceSats?: number;
-  /** Default category for prompts: 'ai'|'coding'|'writing'|'research'|'other' */
+  /** Default price in cents for gigs (0 = negotiate). */
+  defaultPriceCents?: number;
+  /** Default category for gigs: 'research'|'content-writing'|'seo'|'technical-documentation'|'data-analysis'|'code-review'|'other' */
   defaultCategory?: string;
 }
 
@@ -29,12 +34,12 @@ export default defineSocial<Config>({
     const token = ctx.secret('UGIG_TOKEN');
     if (!token) throw new Error('UGIG_TOKEN not in vault — see setup()');
 
-    const res = await fetch(`${UGIG_API}/profile`, {
+    const res = await fetch(`${UGIG_API}/users/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`ugig auth check failed: HTTP ${res.status}`);
-    const data = await res.json() as { profile?: { username?: string } };
-    const username = data.profile?.username ?? config.username ?? 'ugig';
+    const data = await res.json() as { username?: string; id?: string };
+    const username = data.username ?? config.username ?? 'ugig';
     ctx.log(`ugig connected · @${username}`);
     return { accountId: username };
   },
@@ -45,13 +50,13 @@ export default defineSocial<Config>({
 
     const title = post.title ?? post.body.slice(0, 80).replace(/\n/g, ' ');
     const tags = (post.hashtags ?? []).slice(0, 10);
-    const category = config.defaultCategory ?? 'ai';
-    const priceSats = config.defaultPriceSats ?? 0;
+    const category = config.defaultCategory ?? 'research';
+    const priceCents = config.defaultPriceCents ?? 0;
 
-    ctx.log(`ugig prompt · "${title}" · ${post.body.length} chars · ${tags.length} tags`);
+    ctx.log(`ugig gig · "${title}" · ${post.body.length} chars · ${tags.length} tags`);
 
     if (ctx.dryRun) {
-      return { id: 'dry-run', url: 'https://ugig.net/prompts', platform: 'ugig', publishedAt: new Date().toISOString() };
+      return { id: 'dry-run', url: 'https://ugig.net/gigs', platform: 'ugig', publishedAt: new Date().toISOString() };
     }
 
     const payload: Record<string, unknown> = {
@@ -60,11 +65,11 @@ export default defineSocial<Config>({
       content: post.link ? `${post.body}\n\n${post.link}` : post.body,
       category,
       tags,
-      price_sats: priceSats,
+      price_cents: priceCents,
       status: 'active',
     };
 
-    const res = await fetch(`${UGIG_API}/prompts`, {
+    const res = await fetch(`${UGIG_API}/gigs`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -78,11 +83,11 @@ export default defineSocial<Config>({
       throw new Error(`ugig post failed: HTTP ${res.status} — ${err}`);
     }
 
-    const data = await res.json() as { listing?: { id?: string; slug?: string } };
-    const listing = data.listing ?? {};
-    const id = listing.id ?? `ugig_${Date.now()}`;
-    const slug = listing.slug ?? id;
-    const url = `https://ugig.net/prompts/${slug}`;
+    const data = await res.json() as { id?: string; slug?: string; gig?: { id?: string; slug?: string } };
+    const gig = data.gig ?? data;
+    const id = gig.id ?? `ugig_${Date.now()}`;
+    const slug = gig.slug ?? id;
+    const url = `https://ugig.net/gigs/${slug}`;
 
     ctx.log(`ugig published · ${url}`);
     return { id, url, platform: 'ugig', publishedAt: new Date().toISOString() };
@@ -97,7 +102,7 @@ export default defineSocial<Config>({
       'Obtain Bearer token: POST https://ugig.net/api/auth/login body={"email":"…","password":"…"}',
       'Copy access_token from the JSON response',
       'Store it as UGIG_TOKEN in your sh1pt secrets vault',
-      'Optionally set defaultCategory (ai|coding|writing|research|other) and defaultPriceSats in config',
+      'Optionally set defaultCategory (research|content-writing|seo|technical-documentation|other) and defaultPriceCents in config',
     ],
   }),
 });
