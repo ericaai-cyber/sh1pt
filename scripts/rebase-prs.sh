@@ -39,8 +39,10 @@ MASTER_SHA=$(git rev-parse HEAD)
 echo "Master HEAD: $MASTER_SHA"
 
 # Configure git identity if not set
-if [ -z "$(git config user.email)" ]; then
+if [ -z "$(git config user.email 2>/dev/null)" ]; then
   git config user.email "auto-rebase@sh1pt.local"
+fi
+if [ -z "$(git config user.name 2>/dev/null)" ]; then
   git config user.name "Auto Rebase Script"
 fi
 
@@ -152,7 +154,7 @@ for PR_NUMBER in $PR_LIST; do
 
   if $REBASE_SUCCESS; then
     # Regenerate pnpm-lock.yaml if package.json changed
-    if git diff "$BASE_BRANCH"...HEAD --name-only 2>/dev/null | grep -q "package.json"; then
+    if git diff "$BASE_BRANCH..HEAD" --name-only 2>/dev/null | grep -q "package.json"; then
       log "package.json changed, regenerating pnpm-lock.yaml..."
       pnpm install --no-frozen-lockfile 2>/dev/null || true
       if ! git diff --quiet pnpm-lock.yaml 2>/dev/null; then
