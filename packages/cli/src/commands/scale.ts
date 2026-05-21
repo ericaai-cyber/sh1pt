@@ -251,11 +251,110 @@ scaleCmd
 scaleCmd
   .command('down')
   .description('Tear down instances (cheapest / least-healthy first)')
-  .option('--instances <n>', 'number of instances to destroy', Number)
-  .option('--provider <id>', 'cloud provider id')
-  .action((opts) => {
-    console.log(kleur.yellow(`[stub] scale down ${JSON.stringify(opts)}`));
-    // TODO: pick N victims, CloudProvider.destroy() each, syncRoundRobin() with remaining IPs
+  .option('--instances <n>', 'number of instances to destroy', Number, 1)
+  .option('--provider <id>', 'only remove instances from this cloud provider')
+  .option('--dry-run', 'show the plan without modifying state')
+  .option('--json', 'machine-readable output')
+  .action((opts: {
+    instances: number;
+    provider?: string;
+    dryRun?: boolean;
+    json?: boolean;
+  }) => {
+    if (opts.instances < 1) {
+      console.error(kleur.red('Error: --instances must be at least 1'));
+      process.exit(1);
+    }
+
+    const fleet = loadFleet();
+
+    if (fleet.instances.length === 0) {
+      if (opts.json) {
+        console.log(JSON.stringify({ removed: [], fleet: { instances: 0, hourly: 0 } }, null, 2));
+      } else {
+        console.log(kleur.yellow('No instances in fleet — nothing to tear down.'));
+      }
+      return;
+    }
+
+    // Filter by provider if specified
+    let candidates = opts.provider
+      ? fleet.instances.filter(i => i.provider === opts.provider)
+      : [...fleet.instances];
+
+    if (candidates.length === 0) {
+      console.error(kleur.red(`Error: no instances found${opts.provider ? ` for provider "${opts.provider}"` : ''}.`));
+      process.exit(1);
+    }
+
+    // Sort candidates for removal priority:
+    // 1. failed instances first (least healthy)
+    // 2. then stopped instances
+    // 3. then running instances sorted by hourlyRate ascending (cheapest first)
+    const statusOrder: Record<string, number> = { failed: 0, stopped: 1, running: 2 };
+    candidates.sort((a, b) => {
+      const sa = statusOrder[a.status] ?? 3;
+      const sb = statusOrder[b.status] ?? 3;
+      if (sa !== sb) return sa - sb;
+      return a.hourlyRate - b.hourlyRate;
+    });
+
+    const removeCount = Math.min(opts.instances, candidates.length);
+    const toRemove = candidates.slice(0, removeCount);
+    const removedIds = new Set(toRemove.map(i => i.id));
+
+    // Calculate savings
+    const currentHourly = fleet.instances.reduce((sum, i) => sum + i.hourlyRate, 0);
+    const removedHourly = toRemove.reduce((sum, i) => sum + i.hourlyRate, 0);
+    const newHourly = currentHourly - removedHourly;
+
+    if (opts.json) {
+      console.log(JSON.stringify({
+        removed: toRemove.map(i => ({
+          id: i.id,
+          provider: i.provider,
+          status: i.status,
+          publicIp: i.publicIp,
+          hourlyRate: i.hourlyRate,
+        })),
+        fleet: {
+          instances: fleet.instances.length - removeCount,
+          hourly: newHourly,
+        },
+      }, null, 2));
+      return;
+    }
+
+    // Human-readable output
+    console.log(kleur.bold('\n📉 Scale Down Plan'));
+    console.log(kleur.dim('─'.repeat(52)));
+    console.log(`${kleur.cyan('Removing:'.padEnd(20))} ${removeCount} instance(s)`);
+    if (opts.provider) {
+      console.log(`${kleur.cyan('Provider filter:'.padEnd(20))} ${opts.provider}`);
+    }
+    console.log(`${kleur.cyan('Current hourly:'.padEnd(20))} $${currentHourly.toFixed(3)}/hr`);
+    console.log(`${kleur.cyan('Savings:'.padEnd(20))} $${removedHourly.toFixed(3)}/hr ($${(removedHourly * 730).toFixed(2)}/mo)`);
+    console.log(`${kleur.cyan('Projected hourly:'.padEnd(20))} $${newHourly.toFixed(3)}/hr`);
+
+    console.log(kleur.dim('─'.repeat(52)));
+    console.log(kleur.bold('Instances being torn down:'));
+    for (const inst of toRemove) {
+      const statusIcon = inst.status === 'failed' ? kleur.red('✖') : inst.status === 'stopped' ? kleur.yellow('■') : kleur.green('●');
+      console.log(`  ${statusIcon} ${inst.id} ${kleur.dim(`(${inst.provider})`)} ${inst.publicIp ?? 'no IP'} $${inst.hourlyRate.toFixed(3)}/hr`);
+    }
+    console.log(kleur.dim('─'.repeat(52)));
+
+    if (opts.dryRun) {
+      console.log(kleur.dim('Dry-run — no changes made.'));
+      return;
+    }
+
+    // Execute: remove instances from fleet
+    fleet.instances = fleet.instances.filter(i => !removedIds.has(i.id));
+    saveFleet(fleet);
+
+    console.log(kleur.green(`✅ ${removeCount} instance(s) torn down.`));
+    console.log(kleur.dim(`Remaining fleet: ${fleet.instances.length} instance(s), $${newHourly.toFixed(3)}/hr`));
   });
 
 scaleCmd
