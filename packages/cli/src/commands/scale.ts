@@ -265,9 +265,121 @@ scaleCmd
   .option('--max <n>', 'maximum instances', Number, 10)
   .option('--target-cpu <percent>', 'target CPU utilization to maintain', Number, 70)
   .option('--cooldown <seconds>', 'minimum time between scale events', Number, 300)
-  .action((opts) => {
-    console.log(kleur.cyan(`[stub] scale auto ${JSON.stringify(opts)}`));
-    // TODO: PUT /v1/scale/rules — sh1pt cloud evaluates periodically
+  .option('--status', 'show current auto-scale rules')
+  .option('--dry-run', 'show the rules without saving')
+  .option('--json', 'machine-readable output')
+  .action((opts: {
+    min: number;
+    max: number;
+    targetCpu: number;
+    cooldown: number;
+    status?: boolean;
+    dryRun?: boolean;
+    json?: boolean;
+  }) => {
+    const AUTO_SCALE_FILE = join(homedir(), '.sh1pt', 'auto-scale.json');
+
+    /** Load auto-scale rules from disk. */
+    function loadAutoScaleRules(): Record<string, unknown> {
+      try {
+        if (existsSync(AUTO_SCALE_FILE)) {
+          return JSON.parse(readFileSync(AUTO_SCALE_FILE, 'utf-8'));
+        }
+      } catch { /* corrupted or missing */ }
+      return {};
+    }
+
+    /** Save auto-scale rules to disk. */
+    function saveAutoScaleRules(rules: Record<string, unknown>): void {
+      const dir = dirname(AUTO_SCALE_FILE);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(AUTO_SCALE_FILE, JSON.stringify(rules, null, 2));
+    }
+
+    // Status mode — just show current rules
+    if (opts.status) {
+      const rules = loadAutoScaleRules();
+      if (Object.keys(rules).length === 0) {
+        if (opts.json) {
+          console.log(JSON.stringify({ rules: null }, null, 2));
+        } else {
+          console.log(kleur.yellow('No auto-scale rules configured. Run `sh1pt scale auto --min 2 --max 20` to set rules.'));
+        }
+        return;
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({ rules }, null, 2));
+        return;
+      }
+
+      console.log(kleur.bold('\n📊 Auto-Scale Rules'));
+      console.log(kleur.dim('─'.repeat(52)));
+      for (const [key, value] of Object.entries(rules)) {
+        console.log(`${kleur.cyan((key + ':').padEnd(20))} ${value}`);
+      }
+      console.log(kleur.dim('─'.repeat(52)));
+      console.log(kleur.dim('Config file: ' + AUTO_SCALE_FILE));
+      return;
+    }
+
+    // Validate new rules
+    const min = opts.min;
+    const max = opts.max;
+    const targetCpu = opts.targetCpu;
+    const cooldown = opts.cooldown;
+
+    if (min < 0) {
+      console.error(kleur.red('Error: --min must be 0 or greater'));
+      process.exit(1);
+    }
+    if (max < 1) {
+      console.error(kleur.red('Error: --max must be at least 1'));
+      process.exit(1);
+    }
+    if (min > max) {
+      console.error(kleur.red('Error: --min cannot exceed --max'));
+      process.exit(1);
+    }
+    if (targetCpu < 1 || targetCpu > 100) {
+      console.error(kleur.red('Error: --target-cpu must be between 1 and 100'));
+      process.exit(1);
+    }
+    if (cooldown < 60) {
+      console.error(kleur.red('Error: --cooldown must be at least 60 seconds'));
+      process.exit(1);
+    }
+
+    const rules: Record<string, unknown> = {
+      minInstances: min,
+      maxInstances: max,
+      targetCpuPercent: targetCpu,
+      cooldownSeconds: cooldown,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (opts.json) {
+      console.log(JSON.stringify({ rules }, null, 2));
+      return;
+    }
+
+    console.log(kleur.bold('\n📊 Auto-Scale Rules'));
+    console.log(kleur.dim('─'.repeat(52)));
+    console.log(`${kleur.cyan('Min instances:'.padEnd(20))} ${min}`);
+    console.log(`${kleur.cyan('Max instances:'.padEnd(20))} ${max}`);
+    console.log(`${kleur.cyan('Target CPU:'.padEnd(20))} ${targetCpu}%`);
+    console.log(`${kleur.cyan('Cooldown:'.padEnd(20))} ${cooldown}s (${(cooldown / 60).toFixed(1)} min)`);
+    console.log(kleur.dim('─'.repeat(52)));
+
+    if (opts.dryRun) {
+      console.log(kleur.dim('Dry-run — rules not saved.'));
+      return;
+    }
+
+    saveAutoScaleRules(rules);
+    console.log(kleur.green('✅ Auto-scale rules saved.'));
+    console.log(kleur.dim(`Config file: ${AUTO_SCALE_FILE}`));
+    console.log(kleur.dim('sh1pt cloud will poll metrics and scale up/down based on these rules.'));
   });
 
 scaleCmd
