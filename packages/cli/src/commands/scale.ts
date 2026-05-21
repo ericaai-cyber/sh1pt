@@ -5,9 +5,6 @@ import { homedir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { describeInput, resolveInput } from '../input.js';
 import { deployCmd } from './deploy.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
 
 // ---------------------------------------------------------------------------
 // Fleet state (shared with other scale commands)
@@ -54,14 +51,6 @@ function saveFleet(state: FleetState): void {
   writeFileSync(CREDS_FILE, JSON.stringify(creds, null, 2));
 }
 
-function getNextId(instances: FleetEntry[]): string {
-  const nums = instances
-    .map(i => parseInt(i.id.replace(/^inst-/, ''), 10))
-    .filter(n => !isNaN(n));
-  const max = nums.length > 0 ? Math.max(...nums) : 0;
-  return `inst-${String(max + 1).padStart(4, '0')}`;
-}
-
 // ---------------------------------------------------------------------------
 // Rollout state tracking
 // ---------------------------------------------------------------------------
@@ -97,53 +86,7 @@ function saveRollouts(state: RolloutState): void {
   writeFileSync(ROLLOUTS_FILE, JSON.stringify(state, null, 2));
 }
 
-// Shared fleet state — mirrors the cost and auto commands
-const CREDS_FILE = join(homedir(), '.sh1pt', 'credentials.json');
 
-interface FleetEntry {
-  id: string;
-  provider: string;
-  status: 'running' | 'stopped' | 'failed';
-  publicIp?: string;
-  privateIp?: string;
-  createdAt: string;
-  hourlyRate: number;
-  tags?: string[];
-}
-
-interface FleetState {
-  instances: FleetEntry[];
-  lastUpdated: string;
-}
-
-function loadFleet(): FleetState {
-  try {
-    if (existsSync(CREDS_FILE)) {
-      const raw = JSON.parse(readFileSync(CREDS_FILE, 'utf-8'));
-      if (raw.instances) return { instances: raw.instances, lastUpdated: raw.lastUpdated || '' };
-      if (raw.fleet)  return { instances: raw.fleet, lastUpdated: raw.lastUpdated || '' };
-    }
-  } catch {
-    // corrupted or missing
-  }
-  return { instances: [], lastUpdated: '' };
-}
-
-function saveFleet(state: FleetState): void {
-  const dir = dirname(CREDS_FILE);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  state.lastUpdated = new Date().toISOString();
-  // Merge back into the parent structure
-  let creds: Record<string, unknown> = {};
-  try {
-    if (existsSync(CREDS_FILE)) creds = JSON.parse(readFileSync(CREDS_FILE, 'utf-8'));
-  } catch { /* fresh file */ }
-  creds.instances = state.instances;
-  creds.lastUpdated = state.lastUpdated;
-  writeFileSync(CREDS_FILE, JSON.stringify(creds, null, 2));
-}
-
-// Provider pricing (copied from cost command convention)
 const PROVIDER_PRICING: Record<string, { hourly: number; spot: number }> = {
   'aws':          { hourly: 0.096,  spot: 0.028 },
   'gcp':          { hourly: 0.085,  spot: 0.025 },
