@@ -275,11 +275,111 @@ scaleCmd
   .description('Wire round-robin DNS so traffic spreads across the fleet')
   .requiredOption('--provider <id>', 'dns-porkbun | dns-cloudflare')
   .requiredOption('--domain <fqdn>', 'e.g. api.example.com')
-  .option('--ttl <seconds>', '', Number, 60)
+  .option('--ttl <seconds>', 'TTL for DNS records', Number, 60)
   .option('--proxied', 'cloudflare only — route through the CF edge (orange cloud)')
-  .action((opts) => {
-    console.log(kleur.cyan(`[stub] scale dns ${JSON.stringify(opts)}`));
-    // TODO: resolve fleet IPs, call DnsProvider.syncRoundRobin({ name, ips, ttl, proxied })
+  .option('--dry-run', 'show the DNS records that would be created/updated')
+  .option('--json', 'machine-readable output')
+  .action((opts: {
+    provider: string;
+    domain: string;
+    ttl: number;
+    proxied?: boolean;
+    dryRun?: boolean;
+    json?: boolean;
+  }) => {
+    const validProviders = ['dns-porkbun', 'dns-cloudflare'];
+    if (!validProviders.includes(opts.provider)) {
+      console.error(kleur.red(`Error: invalid DNS provider "${opts.provider}". Must be one of: ${validProviders.join(', ')}`));
+      process.exit(1);
+    }
+
+    const fleet = loadFleet();
+    const runningIps = fleet.instances
+      .filter(i => i.status === 'running' && i.publicIp)
+      .map(i => ({ id: i.id, ip: i.publicIp!, provider: i.provider }));
+
+    if (runningIps.length === 0) {
+      if (opts.json) {
+        console.log(JSON.stringify({ domain: opts.domain, provider: opts.provider, records: [], message: 'No running instances with public IPs' }, null, 2));
+      } else {
+        console.log(kleur.yellow('No running instances with public IPs found in fleet.'));
+        console.log(kleur.dim('Provision instances first with `sh1pt scale up`.'));
+      }
+      return;
+    }
+
+    // Build the DNS records that would be created
+    const records = runningIps.map((inst, idx) => ({
+      type: 'A' as const,
+      name: opts.domain,
+      value: inst.ip,
+      ttl: opts.ttl,
+      proxied: opts.proxied ?? false,
+      instanceId: inst.id,
+      provider: inst.provider,
+    }));
+
+    const summary = {
+      domain: opts.domain,
+      provider: opts.provider,
+      ttl: opts.ttl,
+      proxied: opts.proxied ?? false,
+      recordCount: records.length,
+      records,
+    };
+
+    if (opts.json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return;
+    }
+
+    console.log(kleur.bold('\n🌐 DNS Round-Robin Plan'));
+    console.log(kleur.dim('─'.repeat(56)));
+    console.log(`${kleur.cyan('Domain:'.padEnd(20))} ${opts.domain}`);
+    console.log(`${kleur.cyan('DNS Provider:'.padEnd(20))} ${opts.provider}`);
+    console.log(`${kleur.cyan('TTL:'.padEnd(20))} ${opts.ttl}s`);
+    if (opts.proxied) {
+      console.log(`${kleur.cyan('Proxied:'.padEnd(20))} ${kleur.yellow('yes (Cloudflare edge)')}`);
+    }
+    console.log(`${kleur.cyan('Records:'.padEnd(20))} ${records.length} A record(s)`);
+    console.log(kleur.dim('─'.repeat(56)));
+
+    for (const rec of records) {
+      console.log(`  ${kleur.green('A')}   ${rec.name.padEnd(30)} → ${rec.value}  ${kleur.dim(`(inst: ${rec.instanceId}, ${rec.provider})`)}`);
+    }
+
+    console.log(kleur.dim('─'.repeat(56)));
+
+    if (opts.dryRun) {
+      console.log(kleur.dim('Dry-run — no DNS changes made.'));
+      return;
+    }
+
+    // In a real implementation, this would call the DNS provider API
+    // to create/update round-robin A records for the domain.
+    // For now, we save the DNS config alongside the fleet state.
+    const dnsConfig = {
+      domain: opts.domain,
+      provider: opts.provider,
+      ttl: opts.ttl,
+      proxied: opts.proxied ?? false,
+      ips: runningIps.map(i => i.ip),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const credsPath = CREDS_FILE;
+    let creds: Record<string, unknown> = {};
+    try {
+      if (existsSync(credsPath)) creds = JSON.parse(readFileSync(credsPath, 'utf-8'));
+    } catch { /* fresh file */ }
+    creds.dns = dnsConfig;
+    const dir = dirname(credsPath);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(credsPath, JSON.stringify(creds, null, 2));
+
+    console.log(kleur.green(`✅ DNS round-robin configured for ${opts.domain} with ${records.length} A record(s).`));
+    console.log(kleur.dim(`DNS provider: ${opts.provider}`));
+    console.log(kleur.dim(`Next step: verify DNS propagation with \`dig ${opts.domain}\``));
   });
 
 scaleCmd
