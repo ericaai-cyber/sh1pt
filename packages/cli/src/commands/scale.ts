@@ -12,7 +12,7 @@ import { deployCmd } from './deploy.js';
 const CREDS_FILE = join(homedir(), '.sh1pt', 'credentials.json');
 const ROLLOUTS_FILE = join(homedir(), '.sh1pt', 'rollouts.json');
 
-interface FleetEntry {
+export interface FleetEntry {
   id: string;
   provider: string;
   status: 'running' | 'stopped' | 'failed';
@@ -23,12 +23,18 @@ interface FleetEntry {
   tags?: string[];
 }
 
-interface FleetState {
+export interface FleetState {
   instances: FleetEntry[];
   lastUpdated: string;
 }
 
-function loadFleet(): FleetState {
+/** Get the default path to the fleet credentials file. */
+export function getCredsFilePath(): string {
+  return CREDS_FILE;
+}
+
+/** Load fleet state from the credentials file. */
+export function loadFleet(): FleetState {
   try {
     if (existsSync(CREDS_FILE)) {
       const raw = JSON.parse(readFileSync(CREDS_FILE, 'utf-8'));
@@ -39,7 +45,8 @@ function loadFleet(): FleetState {
   return { instances: [], lastUpdated: '' };
 }
 
-function saveFleet(state: FleetState): void {
+/** Save fleet state back to the credentials file (merges into existing structure). */
+export function saveFleet(state: FleetState): void {
   const dir = dirname(CREDS_FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   state.lastUpdated = new Date().toISOString();
@@ -54,7 +61,7 @@ function saveFleet(state: FleetState): void {
 // ---------------------------------------------------------------------------
 // Rollout state tracking
 // ---------------------------------------------------------------------------
-interface RolloutRecord {
+export interface RolloutRecord {
   id: string;
   version: string;
   strategy: string;
@@ -67,11 +74,12 @@ interface RolloutRecord {
   note?: string;
 }
 
-interface RolloutState {
+export interface RolloutState {
   rollouts: RolloutRecord[];
 }
 
-function loadRollouts(): RolloutState {
+/** Load rollout state from the rollouts file. */
+export function loadRollouts(): RolloutState {
   try {
     if (existsSync(ROLLOUTS_FILE)) {
       return JSON.parse(readFileSync(ROLLOUTS_FILE, 'utf-8'));
@@ -80,7 +88,8 @@ function loadRollouts(): RolloutState {
   return { rollouts: [] };
 }
 
-function saveRollouts(state: RolloutState): void {
+/** Save rollout state to the rollouts file. */
+export function saveRollouts(state: RolloutState): void {
   const dir = dirname(ROLLOUTS_FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(ROLLOUTS_FILE, JSON.stringify(state, null, 2));
@@ -101,7 +110,8 @@ const PROVIDER_PRICING: Record<string, { hourly: number; spot: number }> = {
   'crusoe':       { hourly: 0.14,   spot: 0.07  },
 };
 
-function getNextId(instances: FleetEntry[]): string {
+/** Generate the next sequential instance ID (inst-0001, inst-0002, …). */
+export function getNextId(instances: FleetEntry[]): string {
   const nums = instances
     .map(i => parseInt(i.id.replace(/^inst-/, ''), 10))
     .filter(n => !isNaN(n));
