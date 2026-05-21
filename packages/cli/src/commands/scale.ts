@@ -628,11 +628,92 @@ scaleCmd
 scaleCmd
   .command('status')
   .description('Current fleet: instance count, DNS records, load distribution')
-  .option('--json')
+  .option('--json', 'machine-readable output')
   .action((opts: { json?: boolean }) => {
+    const fleet = loadFleet();
+
+    // Count by provider and status
+    const byProvider = new Map<string, { running: number; stopped: number; failed: number; hourly: number }>();
+    let totalHourly = 0;
+
+    for (const inst of fleet.instances) {
+      if (!byProvider.has(inst.provider)) {
+        byProvider.set(inst.provider, { running: 0, stopped: 0, failed: 0, hourly: 0 });
+      }
+      const entry = byProvider.get(inst.provider)!;
+      entry[inst.status]++;
+      entry.hourly += inst.hourlyRate;
+      totalHourly += inst.hourlyRate;
+    }
+
+    const totalMonthly = totalHourly * 730;
+
     if (opts.json) {
-      console.log(JSON.stringify({ instances: [], dns: [], autoRules: null }, null, 2));
+      const providers: Record<string, unknown> = {};
+      for (const [prov, stats] of byProvider) {
+        providers[prov] = stats;
+      }
+      console.log(JSON.stringify({
+        instances: fleet.instances.length,
+        totalHourly: totalHourly,
+        totalMonthly: totalMonthly,
+        byProvider: providers,
+        lastUpdated: fleet.lastUpdated,
+      }, null, 2));
       return;
     }
-    console.log(kleur.dim('[stub] scale status'));
+
+    console.log(kleur.bold('\n📋 Fleet Status'));
+    console.log(kleur.dim('─'.repeat(56)));
+
+    if (fleet.instances.length === 0) {
+      console.log(kleur.yellow('No instances in fleet.'));
+      console.log(kleur.dim('Provision instances with `sh1pt scale up`.'));
+      return;
+    }
+
+    // Status summary
+    const running = fleet.instances.filter(i => i.status === 'running').length;
+    const stopped = fleet.instances.filter(i => i.status === 'stopped').length;
+    const failed = fleet.instances.filter(i => i.status === 'failed').length;
+
+    console.log(`${kleur.cyan('Total instances:'.padEnd(20))} ${fleet.instances.length}`);
+    console.log(`${kleur.cyan('Running:'.padEnd(20))} ${kleur.green(String(running))}`);
+    if (stopped > 0) console.log(`${kleur.cyan('Stopped:'.padEnd(20))} ${kleur.yellow(String(stopped))}`);
+    if (failed > 0) console.log(`${kleur.cyan('Failed:'.padEnd(20))} ${kleur.red(String(failed))}`);
+    console.log(`${kleur.cyan('Hourly cost:'.padEnd(20))} $${totalHourly.toFixed(3)}/hr`);
+    console.log(`${kleur.cyan('Monthly est:'.padEnd(20))} $${totalMonthly.toFixed(2)}/mo`);
+
+    if (fleet.lastUpdated) {
+      console.log(`${kleur.cyan('Last updated:'.padEnd(20))} ${fleet.lastUpdated}`);
+    }
+
+    // Provider breakdown
+    console.log();
+    console.log(kleur.bold('By Provider:'));
+    console.log(kleur.dim('─'.repeat(56)));
+    for (const [prov, stats] of byProvider) {
+      const provTotal = stats.running + stats.stopped + stats.failed;
+      const provHourly = stats.hourly;
+      const statusParts: string[] = [];
+      if (stats.running > 0) statusParts.push(kleur.green(`${stats.running} running`));
+      if (stats.stopped > 0) statusParts.push(kleur.yellow(`${stats.stopped} stopped`));
+      if (stats.failed > 0) statusParts.push(kleur.red(`${stats.failed} failed`));
+      console.log(
+        `  ${kleur.bold(prov.padEnd(20))} ${String(provTotal).padEnd(4)} inst  ${statusParts.join(', ')}  ${kleur.yellow(`$${provHourly.toFixed(3)}/hr`)}`
+      );
+    }
+
+    // Instance list
+    console.log();
+    console.log(kleur.bold('Instances:'));
+    console.log(kleur.dim('─'.repeat(56)));
+    for (const inst of fleet.instances) {
+      const statusIcon = inst.status === 'running' ? kleur.green('●') : inst.status === 'stopped' ? kleur.yellow('■') : kleur.red('✖');
+      console.log(
+        `  ${statusIcon} ${inst.id.padEnd(12)} ${inst.provider.padEnd(14)} ${inst.publicIp?.padEnd(18) ?? '(no IP)'.padEnd(18)} $${inst.hourlyRate.toFixed(3)}/hr`
+      );
+    }
+
+    console.log(kleur.dim('─'.repeat(56)));
   });
