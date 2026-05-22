@@ -1,0 +1,39 @@
+{
+  "name": "@profullstack/sh1pt-action-packs",
+  "version": "0.0.1",
+  "description": "Built-in sh1pt action packs (workflow templates) for the Actions Store.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/sh1pt.git",
+    "directory": "packages/action-packs"
+  },
+  "homepage": "https://sh1pt.com",
+  "bugs": "https://github.com/profullstack/sh1pt/issues",
+  "keywords": [
+    "sh1pt",
+    "github-actions",
+    "workflow",
+    "ci"
+  ],
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist",
+    "packs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@profullstack/sh1pt-actions-fleet-core": "workspace:^"
+  }
+}

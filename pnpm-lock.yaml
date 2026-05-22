@@ -21,6 +21,24 @@ importers:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/action-packs:
+    dependencies:
+      '@profullstack/sh1pt-actions-fleet-core':
+        specifier: workspace:^
+        version: link:../actions-fleet-core
+
+  packages/actions-fleet-core:
+    dependencies:
+      '@profullstack/sh1pt-core':
+        specifier: workspace:^
+        version: link:../core
+      yaml:
+        specifier: ^2.6.0
+        version: 2.9.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+
   packages/affiliates/admitad:
     dependencies:
       '@profullstack/sh1pt-core':
