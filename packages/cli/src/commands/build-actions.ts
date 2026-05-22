@@ -1,0 +1,206 @@
+import { Command } from 'commander';
+import kleur from 'kleur';
+import { resolve } from 'node:path';
+import {
+  installPlan,
+  planDiff,
+  renderPack,
+  type CatalogEntry,
+  type DiffPlan,
+  type RenderInputs,
+} from '@profullstack/sh1pt-actions-fleet-core';
+import { loadBuiltinPacks } from '@profullstack/sh1pt-action-packs';
+
+export const actionsCmd = new Command('actions')
+  .description('Install and manage GitHub Actions workflow packs from the sh1pt Actions Store.');
+
+async function getCatalogEntry(packId: string): Promise<CatalogEntry> {
+  const catalog = await loadBuiltinPacks();
+  const entry = catalog.get(packId);
+  if (!entry) {
+    const available = [...catalog.keys()].sort().join(', ') || '(none)';
+    throw new Error(`pack "${packId}" not found. Available: ${available}`);
+  }
+  return entry;
+}
+
+function parseInputPairs(pairs: string[] | undefined): RenderInputs {
+  const inputs: RenderInputs = {};
+  for (const pair of pairs ?? []) {
+    const eq = pair.indexOf('=');
+    if (eq <= 0) throw new Error(`invalid --input pair "${pair}", expected key=value`);
+    const key = pair.slice(0, eq);
+    const value = pair.slice(eq + 1);
+    inputs[key] = value;
+  }
+  return inputs;
+}
+
+function printStatusLine(destination: string, statusKind: string, reason?: string): void {
+  const map: Record<string, (s: string) => string> = {
+    create: kleur.green,
+    'update-managed': kleur.cyan,
+    unchanged: kleur.dim,
+    'conflict-unmanaged': kleur.yellow,
+    'conflict-other-pack': kleur.yellow,
+  };
+  const colorize = map[statusKind] ?? kleur.white;
+  const tag = colorize(statusKind.padEnd(20));
+  const suffix = reason ? kleur.dim(` — ${reason}`) : '';
+  console.log(`  ${tag} ${destination}${suffix}`);
+}
+
+actionsCmd
+  .command('list')
+  .description('List built-in action packs.')
+  .option('--json', 'emit machine-readable JSON')
+  .action(async (opts: { json?: boolean }) => {
+    const catalog = await loadBuiltinPacks();
+    const rows = [...catalog.values()]
+      .map((e) => ({
+        id: e.manifest.id,
+        name: e.manifest.name,
+        version: e.manifest.version,
+        categories: e.manifest.categories,
+        description: e.manifest.description,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    if (opts.json) {
+      console.log(JSON.stringify(rows, null, 2));
+      return;
+    }
+
+    if (rows.length === 0) {
+      console.log(kleur.dim('(no built-in packs)'));
+      return;
+    }
+
+    for (const row of rows) {
+      console.log(`${kleur.bold(row.id)} ${kleur.dim(`v${row.version}`)}`);
+      console.log(`  ${row.name} — ${row.description}`);
+      console.log(`  ${kleur.dim('categories:')} ${row.categories.join(', ')}`);
+      console.log();
+    }
+  });
+
+actionsCmd
+  .command('show')
+  .description('Show details of a single action pack.')
+  .argument('<pack-id>', 'pack id, e.g. node-pnpm-ci')
+  .option('--json', 'emit machine-readable JSON')
+  .action(async (packId: string, opts: { json?: boolean }) => {
+    const { manifest } = await getCatalogEntry(packId);
+    if (opts.json) {
+      console.log(JSON.stringify(manifest, null, 2));
+      return;
+    }
+
+    console.log(kleur.bold(`${manifest.name} (${manifest.id}@${manifest.version})`));
+    console.log(manifest.description);
+    console.log();
+    console.log(`${kleur.dim('publisher:')}   ${manifest.publisher}`);
+    console.log(`${kleur.dim('visibility:')}  ${manifest.visibility}`);
+    console.log(`${kleur.dim('license:')}     ${manifest.license}`);
+    console.log(`${kleur.dim('categories:')}  ${manifest.categories.join(', ')}`);
+    console.log(`${kleur.dim('pricing:')}     ${manifest.pricing.type}`);
+
+    if (Object.keys(manifest.inputs).length > 0) {
+      console.log();
+      console.log(kleur.bold('Inputs'));
+      for (const [name, def] of Object.entries(manifest.inputs)) {
+        const required = def.required ? kleur.yellow(' (required)') : '';
+        const dflt = def.default !== undefined ? kleur.dim(` [default: ${def.default}]`) : '';
+        const desc = def.description ? ` — ${def.description}` : '';
+        console.log(`  ${name}${required}${dflt}${desc}`);
+      }
+    }
+
+    if (manifest.secrets.length > 0) {
+      console.log();
+      console.log(kleur.bold('Secrets'));
+      for (const s of manifest.secrets) {
+        const required = (s.required ?? false) ? kleur.yellow(' (required)') : '';
+        const desc = s.description ? ` — ${s.description}` : '';
+        console.log(`  ${s.name}${required}${desc}`);
+      }
+    }
+
+    console.log();
+    console.log(kleur.bold('Files'));
+    for (const f of manifest.files) {
+      console.log(`  ${f.destination}  ${kleur.dim(`← ${f.source} · ${f.mergeStrategy}`)}`);
+    }
+  });
+
+async function buildPlan(packId: string, repoOpt: string, inputs: RenderInputs): Promise<DiffPlan> {
+  const entry = await getCatalogEntry(packId);
+  const repoDir = resolve(repoOpt);
+  const render = await renderPack({
+    packDir: entry.packDir,
+    manifest: entry.manifest,
+    inputs,
+  });
+  return planDiff({ repoDir, render });
+}
+
+actionsCmd
+  .command('plan')
+  .description('Render a pack and show planned file changes vs the target repo (no writes).')
+  .argument('<pack-id>', 'pack id')
+  .option('-r, --repo <dir>', 'target repo directory', '.')
+  .option('-i, --input <pair...>', 'pack input as key=value (repeatable)')
+  .option('--json', 'emit machine-readable JSON')
+  .action(async (packId: string, opts: { repo: string; input?: string[]; json?: boolean }) => {
+    const inputs = parseInputPairs(opts.input);
+    const plan = await buildPlan(packId, opts.repo, inputs);
+
+    if (opts.json) {
+      console.log(JSON.stringify(plan, null, 2));
+      return;
+    }
+
+    console.log(kleur.bold(`Plan: ${plan.packId}@${plan.packVersion} → ${plan.repoDir}`));
+    console.log();
+    for (const file of plan.files) {
+      printStatusLine(file.destination, file.status.kind);
+    }
+  });
+
+actionsCmd
+  .command('install')
+  .description('Render and install pack files into the target repo. Defaults to dry-run unless --yes is passed.')
+  .argument('<pack-id>', 'pack id')
+  .option('-r, --repo <dir>', 'target repo directory', '.')
+  .option('-i, --input <pair...>', 'pack input as key=value (repeatable)')
+  .option('--dry-run', 'show planned changes without writing (default behavior)')
+  .option('-y, --yes', 'actually write files to disk')
+  .option('--force', 'overwrite existing unmanaged or other-pack files')
+  .option('--json', 'emit machine-readable JSON')
+  .action(async (
+    packId: string,
+    opts: { repo: string; input?: string[]; dryRun?: boolean; yes?: boolean; force?: boolean; json?: boolean },
+  ) => {
+    const inputs = parseInputPairs(opts.input);
+    const plan = await buildPlan(packId, opts.repo, inputs);
+    const dryRun = !opts.yes;
+    const result = await installPlan(plan, { dryRun, force: opts.force ?? false });
+
+    if (opts.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const header = dryRun
+      ? kleur.yellow(`Dry-run: ${plan.packId}@${plan.packVersion} → ${plan.repoDir}`)
+      : kleur.bold(`Install: ${plan.packId}@${plan.packVersion} → ${plan.repoDir}`);
+    console.log(header);
+    console.log();
+    for (const file of result.files) {
+      printStatusLine(file.destination, file.action, file.reason);
+    }
+    if (dryRun) {
+      console.log();
+      console.log(kleur.dim('Re-run with --yes to write changes.'));
+    }
+  });

@@ -814,6 +814,12 @@ importers:
 
   packages/cli:
     dependencies:
+      '@profullstack/sh1pt-action-packs':
+        specifier: workspace:^
+        version: link:../action-packs
+      '@profullstack/sh1pt-actions-fleet-core':
+        specifier: workspace:^
+        version: link:../actions-fleet-core
       '@profullstack/sh1pt-core':
         specifier: workspace:^
         version: link:../core
