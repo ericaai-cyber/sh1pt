@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/sh1pt",
-  "version": "0.1.15",
+  "version": "0.2.0",
   "description": "One codebase → every store, registry, CDN, and channel. Build. Promote. Scale. Iterate.",
   "license": "MIT",
   "repository": {
