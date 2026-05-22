@@ -2,11 +2,14 @@ import { Command } from 'commander';
 import kleur from 'kleur';
 import { resolve } from 'node:path';
 import {
+  getGhToken,
   installPlan,
+  openPackPullRequest,
   planDiff,
   renderPack,
   type CatalogEntry,
   type DiffPlan,
+  type OpenPrOutcome,
   type RenderInputs,
 } from '@profullstack/sh1pt-actions-fleet-core';
 import { loadBuiltinPacks } from '@profullstack/sh1pt-action-packs';
@@ -167,21 +170,52 @@ actionsCmd
     }
   });
 
+const OWNER_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+$/;
+
+function looksLikeOwnerRepo(repo: string): boolean {
+  return OWNER_REPO_RE.test(repo);
+}
+
 actionsCmd
   .command('install')
-  .description('Render and install pack files into the target repo. Defaults to dry-run unless --yes is passed.')
+  .description(
+    'Render and install pack files. Local mode (default): writes to a directory unless --dry-run. ' +
+      'Remote mode: pass --repo owner/name --pr to open a pull request via the gh CLI.',
+  )
   .argument('<pack-id>', 'pack id')
-  .option('-r, --repo <dir>', 'target repo directory', '.')
+  .option('-r, --repo <target>', 'local repo directory or owner/name on GitHub', '.')
   .option('-i, --input <pair...>', 'pack input as key=value (repeatable)')
-  .option('--dry-run', 'show planned changes without writing (default behavior)')
-  .option('-y, --yes', 'actually write files to disk')
+  .option('--dry-run', 'show planned changes without writing (default unless --yes)')
+  .option('-y, --yes', 'actually write files (local mode)')
+  .option('--pr', 'open a pull request against the remote repo (requires --repo owner/name)')
+  .option('--base <branch>', 'base branch when opening a PR (defaults to the repo default branch)')
+  .option('--draft', 'open the PR as a draft')
   .option('--force', 'overwrite existing unmanaged or other-pack files')
   .option('--json', 'emit machine-readable JSON')
   .action(async (
     packId: string,
-    opts: { repo: string; input?: string[]; dryRun?: boolean; yes?: boolean; force?: boolean; json?: boolean },
+    opts: {
+      repo: string;
+      input?: string[];
+      dryRun?: boolean;
+      yes?: boolean;
+      pr?: boolean;
+      base?: string;
+      draft?: boolean;
+      force?: boolean;
+      json?: boolean;
+    },
   ) => {
     const inputs = parseInputPairs(opts.input);
+
+    if (opts.pr || looksLikeOwnerRepo(opts.repo)) {
+      if (!looksLikeOwnerRepo(opts.repo)) {
+        throw new Error(`--pr requires --repo owner/name, got "${opts.repo}"`);
+      }
+      await runRemoteInstall(packId, opts.repo, inputs, opts);
+      return;
+    }
+
     const plan = await buildPlan(packId, opts.repo, inputs);
     const dryRun = !opts.yes;
     const result = await installPlan(plan, { dryRun, force: opts.force ?? false });
@@ -204,3 +238,61 @@ actionsCmd
       console.log(kleur.dim('Re-run with --yes to write changes.'));
     }
   });
+
+async function runRemoteInstall(
+  packId: string,
+  ownerRepo: string,
+  inputs: RenderInputs,
+  opts: { base?: string; draft?: boolean; force?: boolean; json?: boolean },
+): Promise<void> {
+  const [owner, repo] = ownerRepo.split('/', 2) as [string, string];
+  const entry = await getCatalogEntry(packId);
+  const render = await renderPack({ packDir: entry.packDir, manifest: entry.manifest, inputs });
+
+  const token = getGhToken();
+  const outcome = await openPackPullRequest({
+    client: { token },
+    owner,
+    repo,
+    manifest: entry.manifest,
+    render,
+    ...(opts.base !== undefined ? { baseBranch: opts.base } : {}),
+    ...(opts.draft !== undefined ? { draft: opts.draft } : {}),
+    ...(opts.force !== undefined ? { force: opts.force } : {}),
+  });
+
+  if (opts.json) {
+    console.log(JSON.stringify(outcome, null, 2));
+    if (outcome.kind === 'error' || outcome.kind === 'conflict') process.exitCode = 1;
+    return;
+  }
+
+  printRemoteOutcome(owner, repo, outcome);
+}
+
+function printRemoteOutcome(owner: string, repo: string, outcome: OpenPrOutcome): void {
+  switch (outcome.kind) {
+    case 'opened':
+      console.log(kleur.green(`✔ PR opened: ${outcome.pullRequestUrl}`));
+      console.log(kleur.dim(`  branch: ${outcome.branch}`));
+      console.log();
+      for (const file of outcome.plan.files) {
+        printStatusLine(file.destination, file.status.kind);
+      }
+      break;
+    case 'unchanged':
+      console.log(kleur.dim(`No changes for ${owner}/${repo} — ${outcome.reason}`));
+      break;
+    case 'conflict':
+      console.log(kleur.yellow(`Conflict in ${owner}/${repo}: ${outcome.reason}`));
+      for (const file of outcome.plan.files) {
+        printStatusLine(file.destination, file.status.kind);
+      }
+      process.exitCode = 1;
+      break;
+    case 'error':
+      console.log(kleur.red(`Error (${outcome.status}): ${outcome.error}`));
+      process.exitCode = 1;
+      break;
+  }
+}

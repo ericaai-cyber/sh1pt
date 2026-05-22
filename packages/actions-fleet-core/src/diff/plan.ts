@@ -217,3 +217,131 @@ export function hasConflicts(plan: DiffPlan): boolean {
     (f) => f.status.kind === 'conflict-unmanaged' || f.status.kind === 'conflict-other-pack',
   );
 }
+
+// ---------- Remote (GitHub PR) variant ----------
+
+export interface RemotePlannedFileDiff {
+  destination: string;
+  source: string;
+  mergeStrategy: PlannedFile['mergeStrategy'];
+  newContent: string;
+  newHash: string;
+  /** SHA of the existing file on the base ref, if it exists. Needed for the
+   *  GitHub Contents API PUT to update an existing file. */
+  existingSha: string | null;
+  status: DiffStatus;
+}
+
+export interface RemoteDiffPlan {
+  packId: string;
+  packVersion: string;
+  owner: string;
+  repo: string;
+  baseRef: string;
+  files: RemotePlannedFileDiff[];
+}
+
+export interface RemoteFileInfo {
+  content: string;
+  sha: string;
+}
+
+export interface PlanRemoteDiffOptions {
+  owner: string;
+  repo: string;
+  baseRef: string;
+  render: RenderResult;
+  /**
+   * Read a file from the target repo at the base ref. Return null when the
+   * file does not exist. The diff classifier uses content + sha; sha is
+   * required to update an existing file via the GitHub Contents API.
+   */
+  readExisting: (destinationPath: string) => Promise<RemoteFileInfo | null>;
+}
+
+export async function planRemoteDiff(options: PlanRemoteDiffOptions): Promise<RemoteDiffPlan> {
+  const { owner, repo, baseRef, render } = options;
+  const files: RemotePlannedFileDiff[] = [];
+
+  for (const file of render.files) {
+    const existing = await options.readExisting(file.destination);
+    let status: DiffStatus;
+    if (existing === null) {
+      status = { kind: 'create' };
+    } else {
+      const header = parseManagedHeader(existing.content);
+      if (!header) {
+        status = { kind: 'conflict-unmanaged' };
+      } else if (header.packId !== render.packId) {
+        status = {
+          kind: 'conflict-other-pack',
+          existingPackId: header.packId,
+          existingPackVersion: header.packVersion,
+        };
+      } else {
+        const bodyHash = existingBodyHash(existing.content);
+        if (bodyHash === file.hash) {
+          status = {
+            kind: 'unchanged',
+            existingPackId: header.packId,
+            existingPackVersion: header.packVersion,
+          };
+        } else {
+          status = {
+            kind: 'update-managed',
+            existingPackId: header.packId,
+            existingPackVersion: header.packVersion,
+          };
+        }
+      }
+    }
+
+    files.push({
+      destination: file.destination,
+      source: file.source,
+      mergeStrategy: file.mergeStrategy,
+      newContent: file.content,
+      newHash: file.hash,
+      existingSha: existing?.sha ?? null,
+      status,
+    });
+  }
+
+  return { packId: render.packId, packVersion: render.packVersion, owner, repo, baseRef, files };
+}
+
+export function summarizeRemoteDiff(plan: RemoteDiffPlan): {
+  create: number;
+  update: number;
+  unchanged: number;
+  conflict: number;
+} {
+  let create = 0;
+  let update = 0;
+  let unchanged = 0;
+  let conflict = 0;
+  for (const f of plan.files) {
+    switch (f.status.kind) {
+      case 'create':
+        create++;
+        break;
+      case 'update-managed':
+        update++;
+        break;
+      case 'unchanged':
+        unchanged++;
+        break;
+      case 'conflict-unmanaged':
+      case 'conflict-other-pack':
+        conflict++;
+        break;
+    }
+  }
+  return { create, update, unchanged, conflict };
+}
+
+export function hasRemoteConflicts(plan: RemoteDiffPlan): boolean {
+  return plan.files.some(
+    (f) => f.status.kind === 'conflict-unmanaged' || f.status.kind === 'conflict-other-pack',
+  );
+}

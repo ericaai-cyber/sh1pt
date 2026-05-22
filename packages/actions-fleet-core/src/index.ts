@@ -4,3 +4,6 @@ export * from './action-pack/render.js';
 export * from './action-pack/catalog.js';
 export * from './diff/plan.js';
 export * from './local/install.js';
+export * from './remote/gh-auth.js';
+export * from './remote/github-api.js';
+export * from './remote/install-pr.js';
